@@ -1,0 +1,40 @@
+name: Build Image
+
+on:
+  push:
+    branches: ['master']
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+
+    env:
+      YCR_REGISTRY_ID: ${{ vars.YCR_REGISTRY_ID }}
+
+    strategy:
+      matrix:
+        include:
+          - { postgres: 16, alpine: '3.18' }
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Create key.json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: "key.json"
+          json: ${{ secrets.YCR_KEY_JSON }}
+
+      - name: Docker login into Yandex Registry by key.json
+        run: cat key.json | docker login --username json_key --password-stdin cr.yandex | rm key.json
+
+      - name: Build the Docker image
+        run: docker build --build-arg ALPINE_VERSION=${{ matrix.alpine }} . --file Dockerfile --tag postgres-backup-s3:${{ matrix.alpine }}
+
+      - name: Docker tag alpine for Yandex Registry
+        run: docker image tag postgres-backup-s3:${{ matrix.alpine }} cr.yandex/${YCR_REGISTRY_ID}/postgres-backup-s3:${{ matrix.alpine }}
+
+      - name: Docker push alpine to Yandex Registry
+        if: github.event_name != 'pull_request'
+        run: docker push cr.yandex/${YCR_REGISTRY_ID}/postgres-backup-s3:${{ matrix.alpine }}
